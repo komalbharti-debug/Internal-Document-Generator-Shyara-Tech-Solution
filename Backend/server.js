@@ -3,7 +3,7 @@ import express from 'express';
 import dotenv from 'dotenv' ; 
 import userRoute from './routes/userRoutes.js';
 import prisma from './src/config/prisma.js';
-// const prisma = require('./src/config/prisma');
+import templateRoutes from './src/routes/templateRoutes.js';
 
 dotenv.config();
 
@@ -11,7 +11,7 @@ dotenv.config();
 const app = express();
 
 const PORT = process.env.PORT || 5000; 
-
+app.use(express.json());
 // Test Route for Prisma 
 app.get('/test-db', async (req, res) => {
     const templates = await prisma.template.findMany();
@@ -22,6 +22,8 @@ app.get('/test-db', async (req, res) => {
     });
 });
 
+
+app.use('/templates', templateRoutes);
 
 
 // Routes
