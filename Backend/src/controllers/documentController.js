@@ -36,3 +36,45 @@ export const generateDocument = async (req, res) => {
         });
     }
 };
+
+export const getDocuments = async (req, res) => {
+    try {
+        const documents = await prisma.document.findMany({
+            orderBy: {
+                createdAt: 'desc'
+            }
+        });
+
+        res.status(200).json(documents);
+    } catch (error) {
+        res.status(500).json({
+            message: error.message
+        });
+    }
+};
+
+
+export const getDocumentById = async (req, res) => {
+    try {
+        const { id } = req.params;
+
+        const document = await prisma.document.findUnique({
+            where: {
+                id: Number(id)
+            }
+        });
+
+        if (!document) {
+            return res.status(404).json({
+                message: 'Document not found'
+            });
+        }
+
+        res.status(200).json(document);
+
+    } catch (error) {
+        res.status(500).json({
+            message: error.message
+        });
+    }
+};
