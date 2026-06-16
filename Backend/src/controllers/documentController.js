@@ -1,44 +1,69 @@
 
 import prisma from '../config/prisma.js';
-import Handlebars from 'handlebars';
+
 import puppeteer from 'puppeteer';
 import fs from 'fs';
 import path from 'path'; 
-
 export const generateDocument = async (req, res) => {
-    try {
-        const { templateId, data } = req.body;
 
-        const template = await prisma.template.findUnique({
-            where: {
-                id: Number(templateId)
-            }
-        });
+try {
 
-        if (!template) {
-            return res.status(404).json({
-                message: 'Template not found'
-            });
+    const { templateId, values } = req.body;
+
+    const template = await prisma.template.findUnique({
+        where: {
+            id: Number(templateId)
         }
+    });
 
-        const compiledTemplate = Handlebars.compile(template.content);
-
-        const generatedContent = compiledTemplate(data);
-
-        const document = await prisma.document.create({
-            data: {
-                templateId: template.id,
-                content: generatedContent
-            }
-        });
-
-        res.status(201).json(document);
-
-    } catch (error) {
-        res.status(500).json({
-            message: error.message
+    if (!template) {
+        return res.status(404).json({
+            message: 'Template not found'
         });
     }
+
+    let generatedContent = template.content;
+
+    Object.entries(values).forEach(([key, value]) => {
+
+        const regex = new RegExp(
+            `<\\s*${key}\\s*>`,
+            'g'
+        );
+
+        generatedContent =
+            generatedContent.replace(
+                regex,
+                value || ''
+            );
+
+    });
+
+    const document = await prisma.document.create({
+        data: {
+            templateId: template.id,
+            content: generatedContent
+        }
+    });
+
+    res.status(201).json({
+        success: true,
+        message: 'Document generated successfully',
+        document
+    });
+
+} catch (error) {
+
+    console.error(error);
+
+    res.status(500).json({
+        success: false,
+        message: error.message
+    });
+
+}
+
+
 };
 
 export const getDocuments = async (req, res) => {
