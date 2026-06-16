@@ -1,6 +1,9 @@
+
 import prisma from '../config/prisma.js';
 import Handlebars from 'handlebars';
 import puppeteer from 'puppeteer';
+import fs from 'fs';
+import path from 'path'; 
 
 export const generateDocument = async (req, res) => {
     try {
@@ -79,7 +82,56 @@ export const getDocumentById = async (req, res) => {
         });
     }
 };
+// 
+export const previewDocument = async (req, res) => {
 
+    try {
+
+        const { templateId, values } = req.body;
+
+        const template = await prisma.template.findUnique({
+            where: {
+                id: Number(templateId)
+            }
+        });
+
+        if (!template) {
+            return res.status(404).json({
+                message: 'Template not found'
+            });
+        }
+
+        let previewContent = template.content;
+
+        Object.entries(values).forEach(([key, value]) => {
+const regex = new RegExp(
+    `<\\s*${key}\\s*>`,
+    'g'
+);
+
+previewContent =
+    previewContent.replace(
+        regex,
+        value || ''
+    );
+
+        });
+
+        res.status(200).json({
+            success: true,
+            templateId,
+            preview: previewContent
+        });
+
+    } catch (error) {
+
+        res.status(500).json({
+            message: error.message
+        });
+
+    }
+
+};
 
 // Pdf Generation 
 export const generatePDF = async (req, res) => {

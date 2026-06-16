@@ -163,3 +163,39 @@ try {
 }
 
 };
+export const getTemplatePlaceholders = async (req, res) => {
+
+try {
+
+    const { id } = req.params;
+
+    const template =
+        await prisma.template.findUnique({
+            where: {
+                id: Number(id)
+            }
+        });
+
+    if (!template) {
+        return res.status(404).json({
+            message: "Template not found"
+        });
+    }
+
+    res.status(200).json({
+        templateId: template.id,
+        templateName: template.name,
+        placeholders: JSON.parse(
+            template.placeholders || "[]"
+        )
+    });
+
+} catch (error) {
+
+    res.status(500).json({
+        message: error.message
+    });
+
+}
+
+};

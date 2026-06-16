@@ -6,7 +6,9 @@ getTemplates,
 getTemplateById,
 updateTemplate,
 deleteTemplate,
-uploadTemplate
+uploadTemplate,
+getTemplatePlaceholders
+
 } from '../controllers/templateController.js';
 
 import { upload } from '../middleware/uploadMiddleware.js';
@@ -21,6 +23,7 @@ uploadTemplate
 
 router.post('/', createTemplate);
 router.get('/', getTemplates);
+router.get('/:id/placeholders',getTemplatePlaceholders);
 router.get('/:id', getTemplateById);
 router.put('/:id', updateTemplate);
 router.delete('/:id', deleteTemplate);

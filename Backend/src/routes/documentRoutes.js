@@ -3,12 +3,13 @@ import {
     generateDocument,
     getDocuments,
     getDocumentById,
-    generatePDF
+    generatePDF,
+    previewDocument
 } from '../controllers/documentController.js';
 
 
-
 const router = express.Router();
+router.post('/preview', previewDocument);
 
 router.post('/generate', generateDocument);
 
