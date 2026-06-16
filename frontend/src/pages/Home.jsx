@@ -35,7 +35,7 @@ function Home() {
 
         <div
           className="card"
-          onClick={() => navigate("/generate-document")}
+          onClick={() => navigate("/history")}
         >
           <h2>2</h2>
           <p>Generated Documents</p>
