@@ -77,6 +77,16 @@ export const restoreBackup = async (req, res) => {
     ensureDirectory(tempDir);
 
     const zip = new AdmZip(backupZipPath);
+
+    // Validate entries to prevent zip-slip
+    const entries = zip.getEntries();
+    for (const entry of entries) {
+      const name = entry.entryName;
+      if (name.includes('..') || path.isAbsolute(name) || name.startsWith('/') || name.match(/^[A-Za-z]:\\/)) {
+        return res.status(400).json({ success: false, message: 'Invalid backup archive (contains unsafe paths)' });
+      }
+    }
+
     zip.extractAllTo(tempDir, true);
 
     const restoredDbPath = path.join(tempDir, 'database', 'dev.db');

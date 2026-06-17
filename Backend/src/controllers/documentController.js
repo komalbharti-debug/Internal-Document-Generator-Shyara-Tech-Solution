@@ -4,6 +4,9 @@ import { generateReferenceNumber } from '../utils/generateReferenceNumber.js';
 import puppeteer from 'puppeteer';
 import fs from 'fs';
 import path from 'path';
+import PizZip from 'pizzip';
+import Docxtemplater from 'docxtemplater';
+import { convertDocxBufferToPdf, saveBufferToFile } from '../utils/convertDocx.js';
 
 const ensureDirectory = (directoryPath) => {
   const absolutePath = path.resolve(directoryPath);
@@ -31,41 +34,87 @@ export const generateDocument = async (req, res) => {
       });
     }
 
-    const template = await prisma.template.findUnique({
-      where: { id: Number(templateId) },
-      include: { department: true }
-    });
+    const template = await prisma.template.findUnique({ where: { id: Number(templateId) } });
 
     if (!template) {
       return res.status(404).json({ success: false, message: 'Template not found' });
     }
 
+    // In current DB schema, template.department may be a string (shortCode or name)
     if (!template.department) {
-      return res.status(400).json({
-        success: false,
-        message: 'Associated department not found for the selected template'
+      return res.status(400).json({ success: false, message: 'Associated department not found for the selected template' });
+    }
+
+    // If the template has an original DOCX file, produce a DOCX-preserving render
+    let generatedContent = template.content;
+    let savedDocxPath = null;
+    let savedPdfPath = null;
+
+    if (template.filePath && fs.existsSync(template.filePath)) {
+      // Read original DOCX as binary
+      const content = fs.readFileSync(template.filePath, 'binary');
+      const zip = new PizZip(content);
+
+      // Attempt to replace placeholders of form <name> with {name} in document.xml
+      const docXmlFile = zip.file('word/document.xml');
+      if (docXmlFile) {
+        let docXml = docXmlFile.asText();
+        const placeholders = template.placeholders ? JSON.parse(template.placeholders || '[]') : [];
+        placeholders.forEach((ph) => {
+          const safe = ph.replace(/[-/\\^$*+?.()|[\]{}]/g, '\\$&');
+          const rx = new RegExp(`<\\s*${safe}\\s*>`, 'g');
+          docXml = docXml.replace(rx, `{${ph}}`);
+        });
+        zip.file('word/document.xml', docXml);
+      }
+
+      const doc = new Docxtemplater(zip, { paragraphLoop: true, linebreaks: true });
+      try {
+        doc.render(values || {});
+      } catch (err) {
+        console.error('Docxtemplater render error', err);
+        throw err;
+      }
+
+      const buffer = doc.getZip().generate({ type: 'nodebuffer' });
+
+      // Save DOCX
+      const outDocxDir = path.join('generated-documents', 'docx');
+      const docxName = `document-${Date.now()}.docx`;
+      savedDocxPath = saveBufferToFile(buffer, path.join(outDocxDir, docxName));
+
+      // Convert to PDF if possible
+      try {
+        const pdfBuffer = await convertDocxBufferToPdf(buffer);
+        const outPdfDir = path.join('generated-documents', 'pdf');
+        const pdfName = `document-${Date.now()}.pdf`;
+        savedPdfPath = saveBufferToFile(pdfBuffer, path.join(outPdfDir, pdfName));
+      } catch (convErr) {
+        console.warn('DOCX -> PDF conversion failed, continuing without PDF', convErr?.message || convErr);
+      }
+    } else {
+      // Fallback: simple placeholder replacement in plain text content (legacy)
+      Object.entries(values).forEach(([key, value]) => {
+        const regex = new RegExp(`<\\s*${key}\\s*>`, 'g');
+        generatedContent = generatedContent.replace(regex, value ?? '');
       });
     }
 
-    let generatedContent = template.content;
-    Object.entries(values).forEach(([key, value]) => {
-      const regex = new RegExp(`<\\s*${key}\\s*>`, 'g');
-      generatedContent = generatedContent.replace(regex, value ?? '');
-    });
-
     const normalizedDocumentCode = documentCode.trim().toUpperCase();
-    const referenceNumber = await generateReferenceNumber(template.department.shortCode, normalizedDocumentCode);
+
+    // Determine department short code/name from template (DB has department as string)
+    const deptValue = typeof template.department === 'string' ? template.department : (template.department?.shortCode || template.department?.name || String(template.department));
+    const referenceNumber = await generateReferenceNumber(deptValue, normalizedDocumentCode);
 
     const document = await prisma.document.create({
       data: {
         templateId: template.id,
         documentName: template.name,
-        departmentId: template.department.id,
-        departmentName: template.department.name,
-        departmentShortCode: template.department.shortCode,
-        documentCode: normalizedDocumentCode,
+        department: deptValue,
+        documentName: template.name,
         referenceNumber,
         content: generatedContent,
+        filePath: savedPdfPath || savedDocxPath || undefined,
         metadata: JSON.stringify(values)
       }
     });
@@ -93,8 +142,7 @@ export const getDocuments = async (req, res) => {
         OR: [
           { documentName: { contains: query, mode: 'insensitive' } },
           { referenceNumber: { contains: query, mode: 'insensitive' } },
-          { departmentName: { contains: query, mode: 'insensitive' } },
-          { documentCode: { contains: query, mode: 'insensitive' } },
+          { department: { contains: query, mode: 'insensitive' } },
           { metadata: { contains: query, mode: 'insensitive' } }
         ]
       });
@@ -104,8 +152,7 @@ export const getDocuments = async (req, res) => {
       const normalizedDepartment = department.trim();
       filters.push({
         OR: [
-          { departmentShortCode: { equals: normalizedDepartment.toUpperCase(), mode: 'insensitive' } },
-          { departmentName: { contains: normalizedDepartment, mode: 'insensitive' } }
+          { department: { contains: normalizedDepartment, mode: 'insensitive' } }
         ]
       });
     }
@@ -197,6 +244,31 @@ export const generatePDF = async (req, res) => {
       return res.status(404).json({ success: false, message: 'Document not found' });
     }
 
+    // If stored filePath is a DOCX, convert that to PDF
+    const currentPath = document.filePath;
+    if (!currentPath) return res.status(400).json({ success: false, message: 'No file available to convert' });
+
+    const ext = path.extname(currentPath).toLowerCase();
+    if (ext === '.pdf') {
+      return res.status(200).json({ success: true, message: 'PDF already available', filePath: currentPath });
+    }
+
+    if (ext === '.docx') {
+      const docxBuffer = fs.readFileSync(path.resolve(currentPath));
+      try {
+        const pdfBuffer = await convertDocxBufferToPdf(docxBuffer);
+        const outPdfDir = path.join('generated-documents', 'pdf');
+        const pdfName = `document-${document.id}-${Date.now()}.pdf`;
+        const savedPdf = saveBufferToFile(pdfBuffer, path.join(outPdfDir, pdfName));
+        await prisma.document.update({ where: { id: document.id }, data: { filePath: savedPdf } });
+        return res.status(200).json({ success: true, message: 'PDF generated successfully', filePath: savedPdf });
+      } catch (err) {
+        console.error('Conversion error', err);
+        return res.status(500).json({ success: false, message: 'DOCX -> PDF conversion failed' });
+      }
+    }
+
+    // Otherwise fallback to Puppeteer rendering of HTML content
     const outputDirectory = ensureDirectory('generated-documents');
     const browser = await puppeteer.launch({ headless: true });
     const page = await browser.newPage();
@@ -232,10 +304,17 @@ export const downloadDocument = async (req, res) => {
 
     const absolutePath = path.resolve(document.filePath);
     if (!fs.existsSync(absolutePath)) {
-      return res.status(404).json({ success: false, message: 'PDF file not found on disk' });
+      return res.status(404).json({ success: false, message: 'File not found on disk' });
     }
 
-    return res.download(absolutePath, `${document.documentName || 'document'}.pdf`);
+    // Prevent path traversal by ensuring file is inside allowed directories
+    const allowedBases = [path.resolve('uploads'), path.resolve('generated-documents')];
+    const isAllowed = allowedBases.some((b) => absolutePath.startsWith(b + path.sep) || absolutePath === b);
+    if (!isAllowed) {
+      return res.status(403).json({ success: false, message: 'Access to this file is forbidden' });
+    }
+
+    return res.download(absolutePath, `${document.documentName || 'document'}${path.extname(absolutePath)}`);
   } catch (error) {
     console.error(error);
     res.status(500).json({ success: false, message: error.message });

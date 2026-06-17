@@ -1,22 +1,22 @@
 import prisma from '../config/prisma.js';
 
-export const generateReferenceNumber = async (departmentShortCode, documentCode) => {
-  const normalizedShortCode = departmentShortCode.trim().toUpperCase();
-  const normalizedDocumentCode = documentCode.trim().toUpperCase();
+export const generateReferenceNumber = async (department, documentType) => {
+  const normalizedDepartment = String(department).trim().toUpperCase();
+  const normalizedDocumentType = String(documentType).trim().toUpperCase();
 
-  const department = await prisma.department.findUnique({
-    where: { shortCode: normalizedShortCode }
-  });
+  if (!normalizedDepartment) {
+    throw new Error('Department is required for reference generation');
+  }
 
-  if (!department) {
-    throw new Error(`Department shortCode '${departmentShortCode}' not found`);
+  if (!normalizedDocumentType) {
+    throw new Error('Document type is required for reference generation');
   }
 
   const counter = await prisma.referenceCounter.upsert({
     where: {
-      departmentShortCode_documentCode: {
-        departmentShortCode: normalizedShortCode,
-        documentCode: normalizedDocumentCode
+      department_documentType: {
+        department: normalizedDepartment,
+        documentType: normalizedDocumentType
       }
     },
     update: {
@@ -25,12 +25,12 @@ export const generateReferenceNumber = async (departmentShortCode, documentCode)
       }
     },
     create: {
-      departmentShortCode: normalizedShortCode,
-      documentCode: normalizedDocumentCode,
+      department: normalizedDepartment,
+      documentType: normalizedDocumentType,
       currentValue: 1
     }
   });
 
   const sequence = String(counter.currentValue).padStart(3, '0');
-  return `SHY/${normalizedShortCode}/${normalizedDocumentCode}/${sequence}`;
+  return `SHY/${normalizedDepartment}/${normalizedDocumentType}/${sequence}`;
 };
