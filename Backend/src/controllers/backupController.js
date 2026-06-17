@@ -14,7 +14,7 @@ const ensureDirectory = (directoryPath) => {
 
 export const createBackup = async (req, res) => {
   try {
-    const databaseFile = resolvePath('dev.db');
+    const databaseFile = resolvePath('prisma/dev.db');
     const uploadsFolder = resolvePath('uploads');
     const generatedFolder = resolvePath('generated-documents');
     const backupFolder = resolvePath('backups');
@@ -94,7 +94,7 @@ export const restoreBackup = async (req, res) => {
       return res.status(400).json({ success: false, message: 'Backup ZIP must contain database/dev.db' });
     }
 
-    fs.copyFileSync(restoredDbPath, resolvePath('dev.db'));
+    fs.copyFileSync(restoredDbPath, resolvePath('prisma/dev.db'));
 
     const restoreFolder = (sourceDir, targetDir) => {
       if (fs.existsSync(sourceDir)) {

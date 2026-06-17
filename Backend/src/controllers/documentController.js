@@ -16,6 +16,21 @@ const ensureDirectory = (directoryPath) => {
   return absolutePath;
 };
 
+const replacePlaceholdersInZip = (zip, placeholders) => {
+  const xmlFileNames = Object.keys(zip.files).filter((name) => /^word\/.*\.xml$/.test(name));
+  xmlFileNames.forEach((entryName) => {
+    const file = zip.file(entryName);
+    if (!file) return;
+    let xml = file.asText();
+    placeholders.forEach((ph) => {
+      const safe = ph.replace(/[-/\\^$*+?.()|[\]{}]/g, '\\$&');
+      const rx = new RegExp(`<\\s*${safe}\\s*>`, 'g');
+      xml = xml.replace(rx, `{${ph}}`);
+    });
+    zip.file(entryName, xml);
+  });
+};
+
 export const generateDocument = async (req, res) => {
   try {
     const { templateId, documentCode, values } = req.body;
@@ -54,18 +69,10 @@ export const generateDocument = async (req, res) => {
       // Read original DOCX as binary
       const content = fs.readFileSync(template.filePath, 'binary');
       const zip = new PizZip(content);
+      const placeholders = template.placeholders ? JSON.parse(template.placeholders || '[]') : [];
 
-      // Attempt to replace placeholders of form <name> with {name} in document.xml
-      const docXmlFile = zip.file('word/document.xml');
-      if (docXmlFile) {
-        let docXml = docXmlFile.asText();
-        const placeholders = template.placeholders ? JSON.parse(template.placeholders || '[]') : [];
-        placeholders.forEach((ph) => {
-          const safe = ph.replace(/[-/\\^$*+?.()|[\]{}]/g, '\\$&');
-          const rx = new RegExp(`<\\s*${safe}\\s*>`, 'g');
-          docXml = docXml.replace(rx, `{${ph}}`);
-        });
-        zip.file('word/document.xml', docXml);
+      if (placeholders.length) {
+        replacePlaceholdersInZip(zip, placeholders);
       }
 
       const doc = new Docxtemplater(zip, { paragraphLoop: true, linebreaks: true });
@@ -111,10 +118,11 @@ export const generateDocument = async (req, res) => {
         templateId: template.id,
         documentName: template.name,
         department: deptValue,
-        documentName: template.name,
         referenceNumber,
         content: generatedContent,
         filePath: savedPdfPath || savedDocxPath || undefined,
+        docxPath: savedDocxPath || undefined,
+        pdfPath: savedPdfPath || undefined,
         metadata: JSON.stringify(values)
       }
     });
@@ -260,8 +268,8 @@ export const generatePDF = async (req, res) => {
         const outPdfDir = path.join('generated-documents', 'pdf');
         const pdfName = `document-${document.id}-${Date.now()}.pdf`;
         const savedPdf = saveBufferToFile(pdfBuffer, path.join(outPdfDir, pdfName));
-        await prisma.document.update({ where: { id: document.id }, data: { filePath: savedPdf } });
-        return res.status(200).json({ success: true, message: 'PDF generated successfully', filePath: savedPdf });
+        await prisma.document.update({ where: { id: document.id }, data: { filePath: savedPdf, pdfPath: savedPdf, docxPath: currentPath } });
+        return res.status(200).json({ success: true, message: 'PDF generated successfully', filePath: savedPdf, pdfPath: savedPdf, docxPath: currentPath });
       } catch (err) {
         console.error('Conversion error', err);
         return res.status(500).json({ success: false, message: 'DOCX -> PDF conversion failed' });

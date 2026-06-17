@@ -24,18 +24,22 @@ const storage = multer.diskStorage({
 });
 
 const fileFilter = (req, file, cb) => {
-
-    if (
-        file.mimetype ===
+    const allowedMimeTypes = [
         "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
-    ) {
-        cb(null, true);
-    } else {
-        cb(
-            new Error("Only DOCX files are allowed"),
-            false
-        );
+    ];
+    const allowedExtensions = ['.docx'];
+    const blockedExtensions = ['.exe', '.js', '.bat', '.com', '.msi', '.scr', '.cmd', '.vbs'];
+    const extension = path.extname(file.originalname || '').toLowerCase();
+
+    if (!allowedMimeTypes.includes(file.mimetype) || !allowedExtensions.includes(extension)) {
+        return cb(new Error('Only DOCX files are allowed'), false);
     }
+
+    if (blockedExtensions.includes(extension)) {
+        return cb(new Error('Blocked file type'), false);
+    }
+
+    cb(null, true);
 };
 
 export const upload = multer({

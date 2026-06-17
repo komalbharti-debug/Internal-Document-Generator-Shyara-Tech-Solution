@@ -24,6 +24,8 @@ model Document {
   content         String
   createdAt       DateTime @default(now())
   filePath        String?
+  docxPath        String?
+  pdfPath         String?
   metadata        String?
   department      String?
   documentName    String?
