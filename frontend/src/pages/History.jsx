@@ -24,6 +24,7 @@ function History() {
     useState(null);
     const [showCount, setShowCount] =
   useState(5);
+  const [openMenu, setOpenMenu] = useState(null);
 
   useEffect(() => {
 
@@ -80,6 +81,23 @@ function History() {
       );
 
     });
+    const deleteDocument = (indexToDelete) => {
+
+  const updatedDocuments =
+    documents.filter(
+      (_, index) =>
+        index !== indexToDelete
+    );
+
+  setDocuments(updatedDocuments);
+
+  localStorage.setItem(
+    "history",
+    JSON.stringify(updatedDocuments)
+  );
+
+  setOpenMenu(null);
+};
 
   return (
     <>
@@ -162,6 +180,7 @@ function History() {
             <th>Department</th>
             <th>Type</th>
             <th>Date</th>
+            <th>Actions</th>
           </tr>
 
         </thead>
@@ -205,6 +224,39 @@ function History() {
                   <td>
                     {doc.date}
                   </td>
+                  <td style={{ position: "relative" }}>
+  <button
+    onClick={() =>
+      setOpenMenu(
+        openMenu === index
+          ? null
+          : index
+      )
+    }
+  >
+    ⋮
+  </button>
+
+  {openMenu === index && (
+    <div>
+      <button
+        onClick={() =>
+          alert("Edit")
+        }
+      >
+        Edit
+      </button>
+
+      <button
+        onClick={() =>
+          deleteDocument(index)
+        }
+      >
+        Delete
+      </button>
+    </div>
+  )}
+</td>
 
                 </tr>
 
@@ -216,7 +268,7 @@ function History() {
             <tr>
 
               <td
-                colSpan="5"
+                colSpan="6"
                 style={{
                   textAlign: "center",
                   padding: "20px",
